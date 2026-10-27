@@ -27,7 +27,16 @@
   .lcds{stroke:#20271f;fill:none;stroke-linecap:round;stroke-linejoin:round;}
   .hole{fill:#bcc6ac;}
   .holes{stroke:#bcc6ac;fill:none;stroke-linecap:round;}
-  #help{max-width:960px;padding:6px 14px 24px;font-size:15px;line-height:1.45;color:#cfd3d6;}
+  #help{max-width:1000px;margin:0 auto;padding:6px 14px 28px;font-size:15px;line-height:1.45;color:#cfd3d6;}
+  #help::after{content:"";display:block;clear:both;}
+  #help .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;clear:both;}
+  #help .col{background:#2b2f33;border:1px solid #4a5056;border-radius:10px;padding:10px 16px 12px;}
+  #help h2{margin:0 0 6px;font-size:19px;color:#ffd24a;border-bottom:1px solid #4a5056;padding-bottom:4px;}
+  #help h3{margin:10px 0 3px;font-size:15px;color:#fff;text-transform:uppercase;letter-spacing:.5px;}
+  #help p{margin:0;}
+  #help ul{margin:0;padding-left:20px;}
+  #help li{margin:2px 0;}
+  @media (max-width:720px){#help .cols{grid-template-columns:1fr;}}
   #help b{color:#fff;}
   #help kbd{background:#444a50;border:1px solid #666;border-radius:4px;padding:0 5px;font-family:monospace;color:#fff;}
   #mute{float:right;margin:2px 0 6px 12px;background:#444a50;color:#fff;border:1px solid #777;border-radius:6px;font-size:18px;padding:3px 8px;cursor:pointer;}
@@ -38,15 +47,21 @@
 <svg id="dev" viewBox="0 0 1024 600" xmlns="http://www.w3.org/2000/svg"></svg>
 </div>
 <div id="help">
-  <button id="mute" title="Звук вкл/выкл (M)">🔊</button>
-  <b>Управление.</b> Волк ловит яйца корзиной в одном из четырёх положений:
-  <kbd>Q</kbd> — вверху слева, <kbd>A</kbd> — внизу слева, <kbd>P</kbd> — вверху справа, <kbd>L</kbd> — внизу справа
-  (также цифровой блок <kbd>7</kbd> <kbd>1</kbd> <kbd>9</kbd> <kbd>3</kbd> или стрелки: <kbd>←</kbd><kbd>→</kbd> — сторона, <kbd>↑</kbd><kbd>↓</kbd> — верх/низ).
-  На телефоне нажимайте круглые кнопки на корпусе.<br>
-  <kbd>1</kbd> — «ИГРА А» (три жёлоба, медленнее), <kbd>2</kbd> — «ИГРА Б» (четыре жёлоба, быстрее). Пока кнопка игры удерживается, показывается рекорд; игра начинается при отпускании.
-  <kbd>3</kbd> или <kbd>T</kbd> — «ВРЕМЯ»: часы и демонстрационный режим. <kbd>M</kbd> или колокольчик — звук.<br>
-  <b>Правила.</b> За каждое пойманное яйцо — 1 очко. Разбитое яйцо — штрафное очко (цыплёнок). Если в окошке в этот момент виден заяц — цыплёнок убегает, штраф ½ (мигающий значок).
-  Три штрафных очка — конец игры. На 200 и 500 очках штрафы снимаются. После 999 счёт начинается с нуля.
+  <button id="mute" title="Звук вкл/выкл / Sound on/off (M)">🔊</button>
+  <div class="cols">
+  <section class="col" lang="ru">
+    <h2>Правила игры</h2>
+    <h3>Цель</h3><p>Волк ловит в корзину яйца, скатывающиеся по четырём жёлобам.</p>
+    <h3>Управление</h3><ul><li>Клавиатура: <kbd>Q</kbd> — вверху слева, <kbd>A</kbd> — внизу слева, <kbd>P</kbd> — вверху справа, <kbd>L</kbd> — внизу справа.</li><li>Цифровой блок: <kbd>7</kbd> <kbd>1</kbd> <kbd>9</kbd> <kbd>3</kbd>; стрелки: <kbd>←</kbd>/<kbd>→</kbd> — сторона, <kbd>↑</kbd>/<kbd>↓</kbd> — верх/низ.</li><li>На телефоне или мышью — нажимайте четыре круглые кнопки на корпусе.</li><li><kbd>1</kbd> — «ИГРА А», <kbd>2</kbd> — «ИГРА Б» (удерживайте, чтобы увидеть рекорд; игра начинается при отпускании).</li><li><kbd>T</kbd> или <kbd>3</kbd> — «ВРЕМЯ» (часы и демонстрация). <kbd>M</kbd> или колокольчик — звук вкл/выкл.</li></ul>
+    <h3>Правила</h3><ul><li>За каждое пойманное яйцо — +1 очко.</li><li>Скорость растёт; после каждой сотни очков немного снижается.</li><li>Разбитое яйцо — 1 штрафное очко (значок цыплёнка).</li><li>Если в момент падения в окошке виден Заяц — штраф только ½ (мигающий цыплёнок).</li><li>3 штрафных очка — конец игры.</li><li>На 200 и 500 очках штрафы снимаются.</li><li>После 999 счёт начинается с 0.</li><li>Игра А — 3 жёлоба, медленнее; Игра Б — 4 жёлоба, быстрее.</li><li>Рекорды сохраняются отдельно для А и Б.</li></ul>
+  </section>
+  <section class="col" lang="en">
+    <h2>Game rules</h2>
+    <h3>Goal</h3><p>The Wolf catches eggs rolling down 4 chutes into his basket.</p>
+    <h3>Controls</h3><ul><li>Keyboard: <kbd>Q</kbd> upper-left, <kbd>A</kbd> lower-left, <kbd>P</kbd> upper-right, <kbd>L</kbd> lower-right.</li><li>Numpad: <kbd>7</kbd> <kbd>1</kbd> <kbd>9</kbd> <kbd>3</kbd>; arrows: <kbd>←</kbd>/<kbd>→</kbd> side, <kbd>↑</kbd>/<kbd>↓</kbd> upper/lower.</li><li>On a phone or with a mouse, tap the 4 round buttons on the device.</li><li><kbd>1</kbd> = Game A, <kbd>2</kbd> = Game B (hold to see the high score, release to start).</li><li><kbd>T</kbd> or <kbd>3</kbd> = Time (clock + demo). <kbd>M</kbd> or the bell = sound on/off.</li></ul>
+    <h3>Rules</h3><ul><li>+1 point per caught egg.</li><li>Speed grows; it slows down a bit after each hundred points.</li><li>A dropped egg = 1 penalty (chick icon).</li><li>If the Hare is in the window when an egg drops — only ½ penalty (blinking chick).</li><li>3 penalties = game over.</li><li>Penalties are cleared at 200 and 500 points.</li><li>After 999 the score restarts from 0.</li><li>Game A = 3 chutes, slower; Game B = 4 chutes, faster.</li><li>High scores are saved separately for A and B.</li></ul>
+  </section>
+  </div>
 </div>
 <script>
 "use strict";
