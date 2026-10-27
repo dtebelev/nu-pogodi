@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ну, погоди!">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Электроника ИМ-02 «Ну, погоди!»</title>
+<style>
+  html,body{margin:0;padding:0;background:#2b2f33;color:#ddd;font-family:Arial,Helvetica,sans-serif;}
+  body{min-height:100vh;display:flex;flex-direction:column;align-items:center;}
+  #wrap{width:min(100vw, calc((100vh - 8px) * 1024 / 600));max-width:1400px;margin-top:4px;}
+  #dev{display:block;width:100%;height:auto;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
+  .btn{cursor:pointer;}
+  .btn.pressed .cap{transform:translate(0,2px);}
+  .btn.pressed .capface{filter:brightness(.8);}
+  /* LCD segments */
+  .seg{opacity:.075;transition:opacity 40ms linear;}
+  .seg.on{opacity:.9;}
+  .lcd{fill:#20271f;stroke:none;}
+  .lcds{stroke:#20271f;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+  .hole{fill:#bcc6ac;}
+  .holes{stroke:#bcc6ac;fill:none;stroke-linecap:round;}
+  #help{max-width:960px;padding:6px 14px 24px;font-size:15px;line-height:1.45;color:#cfd3d6;}
+  #help b{color:#fff;}
+  #help kbd{background:#444a50;border:1px solid #666;border-radius:4px;padding:0 5px;font-family:monospace;color:#fff;}
+  #mute{float:right;margin:2px 0 6px 12px;background:#444a50;color:#fff;border:1px solid #777;border-radius:6px;font-size:18px;padding:3px 8px;cursor:pointer;}
+</style>
+</head>
+<body>
+<div id="wrap">
+<svg id="dev" viewBox="0 0 1024 600" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+<div id="help">
+  <button id="mute" title="Звук вкл/выкл (M)">🔊</button>
+  <b>Управление.</b> Волк ловит яйца корзиной в одном из четырёх положений:
+  <kbd>Q</kbd> — вверху слева, <kbd>A</kbd> — внизу слева, <kbd>P</kbd> — вверху справа, <kbd>L</kbd> — внизу справа
+  (также цифровой блок <kbd>7</kbd> <kbd>1</kbd> <kbd>9</kbd> <kbd>3</kbd> или стрелки: <kbd>←</kbd><kbd>→</kbd> — сторона, <kbd>↑</kbd><kbd>↓</kbd> — верх/низ).
+  На телефоне нажимайте круглые кнопки на корпусе.<br>
+  <kbd>1</kbd> — «ИГРА А» (три жёлоба, медленнее), <kbd>2</kbd> — «ИГРА Б» (четыре жёлоба, быстрее). Пока кнопка игры удерживается, показывается рекорд; игра начинается при отпускании.
+  <kbd>3</kbd> или <kbd>T</kbd> — «ВРЕМЯ»: часы и демонстрационный режим. <kbd>M</kbd> или колокольчик — звук.<br>
+  <b>Правила.</b> За каждое пойманное яйцо — 1 очко. Разбитое яйцо — штрафное очко (цыплёнок). Если в окошке в этот момент виден заяц — цыплёнок убегает, штраф ½ (мигающий значок).
+  Три штрафных очка — конец игры. На 200 и 500 очках штрафы снимаются. После 999 счёт начинается с нуля.
+</div>
+<script>
+"use strict";
+(function(){
+const NS="http://www.w3.org/2000/svg";
+const dev=document.getElementById('dev');
+
+/* ---------------- geometry helpers ---------------- */
+function hseg(x1,x2,y,t){const h=t/2;return `${x1},${y} ${x1+h},${y-h} ${x2-h},${y-h} ${x2},${y} ${x2-h},${y+h} ${x1+h},${y+h}`;}
+function vseg(x,y1,y2,t){const h=t/2;return `${x},${y1} ${x+h},${y1+h} ${x+h},${y2-h} ${x},${y2} ${x-h},${y2-h} ${x-h},${y1+h}`;}
+const DIGMAP={0:'abcdef',1:'bc',2:'abged',3:'abgcd',4:'fgbc',5:'afgcd',6:'afgedc',7:'abc',8:'abcdefg',9:'abcdfg'};
+
+/* chute geometry (left side; right side is mirrored around x=200) */
+function eggPos(level,i){ // level 0=upper,1=lower
+  const x=50+i*16; const y=112+(x-8)*24/110-7+level*68; return [x,y];
+}
+function hen(x,y){ // printed hen facing right, sitting
+  return `<g transform="translate(${x},${y})">
+   <path d="M-16,4 C-20,-8 -10,-14 0,-12 C4,-20 12,-20 14,-13 C18,-12 20,-9 22,-7 L16,-5 C18,2 14,10 4,12 C-8,14 -16,10 -16,4 Z" fill="#f4f2ea" stroke="#7b6a55" stroke-width="1.2"/>
+   <path d="M-16,2 L-23,-6 L-20,4 Z" fill="#f4f2ea" stroke="#7b6a55" stroke-width="1"/>
+   <path d="M2,-19 q2,-5 4,-1 q2,-5 4,0 q3,-3 3,2 z" fill="#d23a2e"/>
+   <path d="M18,-6 q2,4 -1,6 q-2,-2 -1,-6z" fill="#d23a2e"/>
+   <circle cx="11" cy="-12" r="1.4" fill="#333"/>
+   <path d="M-8,2 q6,6 14,0" fill="none" stroke="#b9ad98" stroke-width="1.2"/>
+  </g>`;
+}
+function chick(x,y,run){ // LCD chick facing left
+  return `<ellipse cx="${x+3}" cy="${y}" rx="6.5" ry="5" class="lcd"/>
+   <circle cx="${x-4}" cy="${y-5}" r="4" class="lcd"/>
+   <path d="M${x-8},${y-6} l-4,1.5 l4,1.5z" class="lcd"/>
+   <circle cx="${x-5}" cy="${y-6}" r="1" class="hole"/>
+   <path d="M${x+1},${y+4} l${run?-4:-1},5 M${x+5},${y+4} l${run?4:1},5" class="lcds" stroke-width="1.6"/>
+   <path d="M${x+2},${y-1} q3,3 6,0" class="holes" stroke-width="1"/>`;
+}
+function brokenEgg(x,y){
+  return `<path d="M${x-12},${y+4} L${x-9},${y-4} L${x-5},${y} L${x-2},${y-7} L${x+1},${y-1} L${x+5},${y-6} L${x+8},${y} L${x+12},${y-3} L${x+13},${y+4} Z" class="lcd"/>
+   <path d="M${x-15},${y-8} l-3,-3 M${x+16},${y-9} l3,-3 M${x},${y-12} l0,-4 M${x-9},${y-11} l-2,-3 M${x+9},${y-12} l2,-3" class="lcds" stroke-width="1.6"/>
+   <ellipse cx="${x}" cy="${y+1.5}" rx="4" ry="2" class="hole"/>`;
+}
+function egg(x,y){return `<ellipse cx="${x}" cy="${y}" rx="6.2" ry="4.6" transform="rotate(14 ${x} ${y})" class="lcd"/><ellipse cx="${x-2}" cy="${y-1.6}" rx="1.8" ry="1" transform="rotate(14 ${x} ${y})" class="hole"/>`;}
+
+function wolfBody(){ // facing left, left half of screen
+  return `
+   <!-- tail -->
+   <path d="M190,186 C206,186 212,198 206,214 C204,206 198,202 194,206 C196,198 194,194 188,194 Z" class="lcd"/>
+   <!-- legs -->
+   <path d="M171,192 L163,228 M184,192 L193,228" class="lcds" stroke-width="8"/>
+   <ellipse cx="158" cy="232" rx="10" ry="4.5" class="lcd"/>
+   <ellipse cx="198" cy="232" rx="10" ry="4.5" class="lcd"/>
+   <!-- torso -->
+   <ellipse cx="178" cy="171" rx="14" ry="24" class="lcd"/>
+   <path d="M166,163 L190,163 M165,173 L191,173 M167,183 L189,183" class="holes" stroke-width="2"/>
+   <!-- pants belt -->
+   <path d="M168,192 L188,192" class="holes" stroke-width="1.5"/>
+   <!-- head -->
+   <ellipse cx="176" cy="128" rx="15" ry="13" class="lcd"/>
+   <path d="M164,121 C156,121 148,123 144,127 C146,133 154,136 166,136 Z" class="lcd"/>
+   <circle cx="144.5" cy="127" r="4" class="lcd"/>
+   <path d="M168,118 L161,99 L177,114 Z M181,116 L191,100 L190,121 Z" class="lcd"/>
+   <path d="M164,108 L168,114 M187,106 L186,114" class="holes" stroke-width="1.5"/>
+   <path d="M188,122 C198,118 199,130 193,136 C196,128 192,126 188,128 Z" class="lcd"/>
+   <circle cx="168" cy="122" r="4" class="hole"/>
+   <circle cx="166.6" cy="122.6" r="1.8" class="lcd"/>
+   <path d="M162,116 L172,118" class="holes" stroke-width="1.6"/>
+   <path d="M150,132.5 C155,135 160,135 165,132" class="holes" stroke-width="1.6"/>
+   <path d="M156,134 l1.5,3 l1.5,-3" class="hole"/>
+   <path d="M171,138 C175,143 182,143 186,138" class="holes" stroke-width="1.4"/>
+  `;
+}
+function basket(x,y){
+  return `<path d="M${x},${y} L${x+28},${y} L${x+24},${y+15} L${x+4},${y+15} Z" class="lcd"/>
+   <path d="M${x-1},${y} L${x+29},${y}" class="lcds" stroke-width="3"/>
+   <path d="M${x+3},${y+5} L${x+25},${y+5} M${x+4.5},${y+10} L${x+23.5},${y+10} M${x+10},${y+2} L${x+11},${y+14} M${x+18},${y+2} L${x+17},${y+14}" class="holes" stroke-width="1.4"/>`;
+}
+function armUp(){return `<path d="M172,158 L162,150 L152,146" class="lcds" stroke-width="6"/><circle cx="153" cy="146" r="4.5" class="lcd"/>${basket(122,141)}`;}
+function armDown(){return `<path d="M172,166 L162,190 L152,210" class="lcds" stroke-width="6"/><circle cx="153" cy="210" r="4.5" class="lcd"/>${basket(122,208)}`;}
+
+function hare(){
+  return `<path d="M60,40 C62,30 70,26 78,28 C86,30 90,38 86,46 C82,52 70,52 64,48 Z" class="lcd"/>
+   <path d="M70,29 C64,18 62,6 67,4 C72,6 74,18 75,28 Z M78,29 C80,18 86,8 91,10 C93,15 86,22 82,31 Z" class="lcd"/>
+   <path d="M68,8 L71,24 M88,13 L82,26" class="holes" stroke-width="1.5"/>
+   <circle cx="80" cy="36" r="3.2" class="hole"/><circle cx="81.5" cy="36.5" r="1.5" class="lcd"/>
+   <circle cx="88" cy="42" r="2.4" class="lcd"/>
+   <path d="M76,46 C80,48 84,47 86,45" class="holes" stroke-width="1.3"/>
+   <path d="M64,50 C70,54 80,58 90,56 L96,52" class="lcds" stroke-width="6"/>
+   <path d="M98,48 C96,44 100,40 104,42 C108,44 108,50 104,54 Z" class="lcd"/>
+   <path d="M101,54 l3,4" class="lcds" stroke-width="2"/>
+   <circle cx="104.5" cy="59" r="1.8" class="lcd"/>`;
+}
+
+function seg(id,inner,extra){return `<g id="s_${id}" class="seg"${extra||''}>${inner}</g>`;}
+
+/* ---------------- build the LCD screen (400x280) ---------------- */
+function buildScreen(){
+  let s='';
+  // background
+  s+=`<defs>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".45" stop-color="#fff" stop-opacity=".03"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+  </defs>`;
+  s+=`<rect x="0" y="0" width="400" height="280" fill="#bcc6ac"/>`;
+  // ---- printed colour background (like the real colour overlay) ----
+  // house and window (top-left)
+  s+=`<path d="M0,10 L26,0 L60,46" fill="none" stroke="#c8503c" stroke-width="4"/>
+      <path d="M4,6 L28,-2" stroke="#c8503c" stroke-width="2"/>
+      <path d="M0,18 L24,8 L52,48 L0,48 Z" fill="#e8dccb" opacity=".8"/>
+      <rect x="40" y="27" width="18" height="21" fill="#7f8a76" stroke="#5f4b3a" stroke-width="2"/>
+      <path d="M49,27 L49,48 M40,37 L58,37" stroke="#5f4b3a" stroke-width="1.5"/>`;
+  // tree top-right
+  s+=`<path d="M346,22 C340,10 356,2 366,8 C372,0 392,0 396,10 C404,12 402,26 392,26 C386,32 372,30 368,26 C360,32 344,30 346,22Z" fill="#6f8f4e" opacity=".85"/>`;
+  // perches (left + right)
+  const perch=(y)=>`<path d="M2,${y} L120,${y+26}" stroke="#9a6a40" stroke-width="5" stroke-linecap="round"/><path d="M8,${y+6} L8,${y+18} M40,${y+13} L40,${y+24} M75,${y+20} L75,${y+32}" stroke="#9a6a40" stroke-width="2.5"/>`;
+  let side='';
+  side+=perch(110)+perch(178);
+  // bushes bottom
+  side+=`<path d="M0,236 C2,222 16,218 24,226 C30,214 48,216 50,230 C54,228 60,232 58,238 L0,238Z" fill="#6f8f4e" opacity=".8"/>`;
+  side+=`<path d="M0,262 L120,262 M150,262 L185,262" stroke="#6f8f4e" stroke-width="4" opacity=".8"/>`;
+  side+=hen(22,96)+hen(22,164);
+  s+=`<g>${side}</g><g transform="translate(400,0) scale(-1,1)">${side}</g>`;
+  // ---- LCD segments ----
+  // hare
+  s+=seg('hare',hare());
+  // eggs: chute c = side*2+level ; left drawn directly, right mirrored
+  let L='',R='';
+  for(let lv=0;lv<2;lv++)for(let i=0;i<5;i++){
+    const [x,y]=eggPos(lv,i);
+    L+=seg(`egg_${lv}_${i}`,egg(x,y));
+    R+=seg(`egg_${2+lv}_${i}`,egg(x,y));
+  }
+  // wolf + arms
+  L+=seg('wolf0',wolfBody())+seg('arm0',armUp())+seg('arm1',armDown());
+  R+=seg('wolf1',wolfBody())+seg('arm2',armUp())+seg('arm3',armDown());
+  // broken eggs and chicks
+  L+=seg('broken0',brokenEgg(118,252));
+  R+=seg('broken1',brokenEgg(118,252));
+  for(let k=0;k<4;k++){L+=seg(`chick0_${k}`,chick(94-k*24,250,k%2));R+=seg(`chick1_${k}`,chick(94-k*24,250,k%2));}
+  s+=`<g>${L}</g><g transform="translate(400,0) scale(-1,1)">${R}</g>`;
+  // score digits
+  const dx=[226,250,280,304], dy=8, w=19, h=32, t=4.2;
+  for(let d=0;d<4;d++){
+    const x0=dx[d]+2,x1=dx[d]+w-2,y0=dy+2,ym=dy+h/2,y2=dy+h-2;
+    const P={a:hseg(x0+1,x1-1,y0,t),g:hseg(x0+1,x1-1,ym,t),d:hseg(x0+1,x1-1,y2,t),
+             f:vseg(x0,y0+1,ym-1,t),b:vseg(x1,y0+1,ym-1,t),e:vseg(x0,ym+1,y2-1,t),c:vseg(x1,ym+1,y2-1,t)};
+    let g='';
+    for(const k in P) g+=seg(`d${d}${k}`,`<polygon points="${P[k]}" class="lcd"/>`);
+    s+=`<g transform="skewX(-7) translate(3,0)">${g}</g>`;
+  }
+  s+=seg('colon',`<circle cx="273" cy="17" r="2.2" class="lcd"/><circle cx="271" cy="31" r="2.2" class="lcd"/>`);
+  s+=seg('hi',`<text x="196" y="22" font-family="Arial" font-weight="bold" font-size="11" class="lcd">HI</text>`);
+  s+=seg('pm',`<text x="330" y="40" font-family="Arial" font-weight="bold" font-size="9" class="lcd">PM</text>`);
+  // penalty chicks
+  for(let k=0;k<3;k++) s+=seg(`pen${k}`,chick(244+k*28,56,0));
+  // game labels
+  s+=seg('gameA',`<text x="8" y="276" font-family="Arial" font-weight="bold" font-size="11" class="lcd">GAME A</text>`);
+  s+=seg('gameB',`<text x="392" y="276" text-anchor="end" font-family="Arial" font-weight="bold" font-size="11" class="lcd">GAME B</text>`);
+  // bell (alarm) ghost near hare
+  s+=seg('bell',`<path d="M118,10 q6,0 6,8 l2,6 l-16,0 l2,-6 q0,-8 6,-8z" class="lcd"/><circle cx="118" cy="26" r="2" class="lcd"/>`);
+  s+=`<rect x="0" y="0" width="400" height="280" fill="url(#glass)" pointer-events="none"/>`;
+  return s;
+}
+
+/* ---------------- build device ---------------- */
+function roundBtn(id,cx,cy){
+  return `<g class="btn" id="b_${id}" data-b="${id}">
+    <circle cx="${cx}" cy="${cy}" r="42" fill="url(#ring)" stroke="#8d8d8b" stroke-width="1.5"/>
+    <circle cx="${cx}" cy="${cy+2}" r="31" fill="#1b1b1b"/>
+    <g class="cap"><circle class="capface" cx="${cx}" cy="${cy}" r="29" fill="url(#knob)"/>
+    <ellipse cx="${cx-8}" cy="${cy-10}" rx="11" ry="6" fill="#fff" opacity=".12"/></g>
+    <circle cx="${cx}" cy="${cy}" r="46" fill="transparent"/>
+  </g>`;
+}
+function pillBtn(id,x,y,label){
+  return `<g class="btn" id="b_${id}" data-b="${id}">
+    <rect x="${x-4}" y="${y-4}" width="64" height="34" rx="17" fill="#8e8e8c"/>
+    <g class="cap"><rect class="capface" x="${x}" y="${y}" width="56" height="26" rx="13" fill="url(#pill)" stroke="#6d6d6b" stroke-width="1"/></g>
+    <text x="${x+28}" y="${y+48}" text-anchor="middle" font-family="Arial" font-size="17" font-weight="bold" fill="#2a2a2a">${label}</text>
+    <rect x="${x-8}" y="${y-8}" width="72" height="62" fill="transparent"/>
+  </g>`;
+}
+function buildDevice(){
+  let s=`<defs>
+   <linearGradient id="case" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#e9e8e4"/><stop offset=".5" stop-color="#d5d4d0"/><stop offset="1" stop-color="#bdbcb8"/></linearGradient>
+   <linearGradient id="bezel" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#cfcecb"/><stop offset="1" stop-color="#a9a8a4"/></linearGradient>
+   <radialGradient id="knob" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#5a5a5a"/><stop offset="1" stop-color="#121212"/></radialGradient>
+   <radialGradient id="ring" cx=".5" cy=".4" r=".6"><stop offset="0" stop-color="#f2f2f0"/><stop offset="1" stop-color="#bcbcb9"/></radialGradient>
+   <linearGradient id="pill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e4e4e2"/><stop offset="1" stop-color="#9c9c9a"/></linearGradient>
+   <pattern id="brush" width="6" height="600" patternUnits="userSpaceOnUse"><rect width="6" height="600" fill="none"/><path d="M1,0 L1,600" stroke="#fff" stroke-opacity=".08"/><path d="M4,0 L4,600" stroke="#000" stroke-opacity=".03"/></pattern>
+  </defs>`;
+  s+=`<rect x="6" y="8" width="1012" height="586" rx="22" fill="#000" opacity=".35"/>`;
+  s+=`<rect x="2" y="2" width="1012" height="584" rx="22" fill="url(#case)" stroke="#8f8f8c" stroke-width="3"/>`;
+  s+=`<rect x="16" y="16" width="984" height="556" rx="14" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2"/>`;
+  s+=`<rect x="2" y="2" width="1012" height="584" rx="22" fill="url(#brush)"/>`;
+  // logo
+  s+=`<circle cx="128" cy="98" r="44" fill="none" stroke="#1d1d1d" stroke-width="3"/>
+      <circle cx="80" cy="100" r="5" fill="#1d1d1d"/>
+      <text x="132" y="116" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="46" fill="#1d1d1d">ИМ</text>`;
+  // bezel and frame lines
+  s+=`<rect x="200" y="62" width="616" height="470" rx="10" fill="url(#bezel)" stroke="#9b9a96" stroke-width="2"/>`;
+  s+=`<path d="M230,300 L230,108 Q230,104 234,104 L368,104 M648,104 L782,104 Q786,104 786,108 L786,490 Q786,494 782,494 L728,494 M290,494 L234,494 Q230,494 230,490 L230,300"
+       fill="none" stroke="#1d1d1d" stroke-width="3.5"/>`;
+  s+=`<text x="508" y="114" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="30" letter-spacing="3" fill="#c8201e">НУ, ПОГОДИ!</text>`;
+  s+=`<text x="509" y="505" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="28" letter-spacing="2.5" fill="#1d1d1d">ЭЛЕКТРОНИКА ИМ 02</text>`;
+  // screen window
+  s+=`<rect x="252" y="128" width="512" height="350" rx="8" fill="#7d7c78"/>`;
+  s+=`<rect x="260" y="135" width="496" height="336" rx="4" fill="#5b5f55"/>`;
+  s+=`<svg x="264" y="139" width="488" height="328" viewBox="0 0 400 280" preserveAspectRatio="none" id="screen">${buildScreen()}</svg>`;
+  // right top buttons
+  s+=pillBtn('A',850,74,'ИГРА А')+pillBtn('B',850,150,'ИГРА Б')+pillBtn('T',850,226,'ВРЕМЯ');
+  // bell + holes (bell toggles sound)
+  s+=`<g class="btn" id="b_M" data-b="M">
+      <rect x="922" y="64" width="50" height="50" fill="transparent"/>
+      <path id="bellicon" d="M947,72 q10,0 10,13 l4,10 l-28,0 l4,-10 q0,-13 10,-13z" fill="none" stroke="#1d1d1d" stroke-width="2.5"/>
+      <circle cx="947" cy="99" r="3" fill="#1d1d1d"/>
+      <path id="mutebar" d="M929,104 L966,70" stroke="#c8201e" stroke-width="3" opacity="0"/></g>
+      <circle cx="944" cy="128" r="9" fill="#1b1b1b"/><circle cx="944" cy="192" r="9" fill="#1b1b1b"/>
+      <g fill="#1d1d1d"><circle cx="932" cy="160" r="2"/><circle cx="940" cy="152" r="2"/><circle cx="950" cy="150" r="2"/>
+      <path d="M956,158 l6,-6 l2,10 l8,0 l0,4 l-12,0z"/></g>`;
+  // round buttons + arrows
+  s+=roundBtn('UL',126,404)+roundBtn('LL',126,506)+roundBtn('UR',892,404)+roundBtn('LR',892,506);
+  s+=`<g fill="#1d1d1d">
+     <path d="M52,362 L90,374 L68,390 Z"/><path d="M52,548 L90,536 L68,520 Z"/>
+     <path d="M966,362 L928,374 L950,390 Z"/><path d="M966,548 L928,536 L950,520 Z"/></g>`;
+  s+=`<g font-family="Arial" font-size="15" fill="#7a7a77" text-anchor="middle">
+     <text x="186" y="372">Q</text><text x="186" y="556">A</text><text x="832" y="372">P</text><text x="832" y="556">L</text></g>`;
+  dev.innerHTML=s;
+}
+buildDevice();
+
+/* ---------------- segment state ---------------- */
+const segEls={};
+dev.querySelectorAll('.seg').forEach(e=>{segEls[e.id.slice(2)]=e;});
+const prevOn={};
+function applySegs(on){
+  for(const k in segEls){const v=!!on[k]; if(prevOn[k]!==v){segEls[k].classList.toggle('on',v);prevOn[k]=v;}}
+}
+
+/* ---------------- audio ---------------- */
+let actx=null, muted=localStorage.getItem('im02_muted')==='1';
+function ensureAudio(){
+  if(!actx){try{actx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){actx=null;}}
+  if(actx&&actx.state==='suspended')actx.resume();
+}
+function tone(freq,dur,when,vol,type){
+  if(muted||!actx)return;
+  const t=actx.currentTime+(when||0);
+  const o=actx.createOscillator(),g=actx.createGain();
+  o.type=type||'square';o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol||0.05,t+0.004);
+  g.gain.setValueAtTime(vol||0.05,t+dur-0.01);g.gain.linearRampToValueAtTime(0,t+dur);
+  o.connect(g);g.connect(actx.destination);o.start(t);o.stop(t+dur+0.02);
+}
+const STEPF=[1046,880,1175,988];
+const snd={
+  step:c=>tone(STEPF[c],0.03,0,0.035),
+  catch:()=>{tone(1568,0.04,0,0.05);tone(2093,0.05,0.045,0.05);},
+  miss:()=>{for(let i=0;i<5;i++)tone(520-i*70,0.09,i*0.1,0.06);},
+  chick:()=>tone(1760,0.025,0,0.03),
+  over:()=>{const n=[784,659,523,392,330,262];n.forEach((f,i)=>tone(f,0.18,i*0.2,0.06));tone(196,0.5,1.25,0.06);},
+  start:()=>{tone(1319,0.06,0,0.05);tone(1760,0.08,0.08,0.05);},
+  key:()=>tone(2637,0.012,0,0.02)
+};
+const muteBtn=document.getElementById('mute');
+function updMute(){muteBtn.textContent=muted?'🔇':'🔊';document.getElementById('mutebar').setAttribute('opacity',muted?1:0);}
+function toggleMute(){muted=!muted;localStorage.setItem('im02_muted',muted?'1':'0');updMute();ensureAudio();}
+updMute();
+
+/* ---------------- game state ---------------- */
+const S={
+  mode:'demo',      // demo | play | miss | over
+  game:'A',
+  score:0, pen:0,   // pen in halves (6 = game over)
+  eggs:[],          // {c,p}
+  chutes:[0,1,2,3],
+  wolf:0, hare:false, hareNext:0,
+  nextTick:0,
+  holdHi:null,      // 'A'|'B' while game button held
+  miss:null,        // {side,half,t0,step}
+  overT:0
+};
+function hiKey(g){return 'im02_hi_'+g;}
+function getHi(g){return parseInt(localStorage.getItem(hiKey(g))||'0',10)||0;}
+function setHi(g,v){if(v>getHi(g))localStorage.setItem(hiKey(g),String(v));}
+
+function interval(){
+  if(S.mode==='demo')return 480;
+  const s=S.score, h=Math.floor(s/100)%10, inH=s%100;
+  const base=S.game==='A'?560:470;
+  const start=base-28*h, span=S.game==='A'?150:170;
+  return Math.max(S.game==='A'?200:160, start-span*inH/100);
+}
+function maxEggs(){
+  if(S.mode==='demo')return 3;
+  const cap=S.game==='A'?3:5;
+  return Math.min(cap,2+Math.floor(S.score/15)+(S.score>=100?1:0));
+}
+
+function startGame(g){
+  ensureAudio();
+  S.game=g;S.mode='play';S.score=0;S.pen=0;S.eggs=[];S.miss=null;
+  if(g==='A'){const ex=Math.floor(Math.random()*4);S.chutes=[0,1,2,3].filter(c=>c!==ex);}else S.chutes=[0,1,2,3];
+  S.nextTick=performance.now()+700;
+  snd.start();
+}
+function toClock(){S.mode='demo';S.eggs=[];S.miss=null;S.chutes=[0,1,2,3];S.nextTick=performance.now()+400;}
+
+function moveWolf(p){
+  if(S.mode==='play'||S.mode==='miss'||S.mode==='over'){S.wolf=p;}
+  else{S.wolf=p;}
+  snd.key();
+}
+
+function addScore(){
+  S.score++;
+  if(S.score>999)S.score=0;            // wrap, penalties kept
+  if(S.score===200||S.score===500)S.pen=0;
+  setHi(S.game,S.score);
+}
+
+function tick(now){
+  // advance eggs
+  let resolved=null;
+  for(const e of S.eggs)e.p++;
+  S.eggs=S.eggs.filter(e=>{if(e.p>=5){resolved=e;return false;}return true;});
+  const sound=S.mode!=='demo';
+  if(resolved){
+    if(S.mode==='demo'||S.wolf===resolved.c){ if(S.mode!=='demo'){addScore();snd.catch();} }
+    else{ startMiss(resolved,now); return; }
+  }
+  // spawn
+  const occupied=new Set(S.eggs.map(e=>e.p));
+  if(!occupied.has(0) && S.eggs.length<maxEggs() && (S.eggs.length===0 || Math.random()<0.55)){
+    // avoid same chute as most recent spawn too often
+    const c=S.chutes[Math.floor(Math.random()*S.chutes.length)];
+    S.eggs.push({c,p:0});
+  }
+  if(sound&&S.eggs.length){
+    const lead=S.eggs.reduce((a,b)=>b.p>a.p?b:a);snd.step(lead.c);
+  }
+  // demo wolf: go to the leading egg's chute
+  if(S.mode==='demo'&&S.eggs.length){
+    const lead=S.eggs.reduce((a,b)=>b.p>a.p?b:a);
+    if(lead.p>=3)S.wolf=lead.c;
+  }
+}
+
+function startMiss(e,now){
+  S.mode='miss';
+  S.miss={side:e.c<2?0:1,half:S.hare,t0:now,step:-1};
+  S.eggs=[];
+  snd.miss();
+}
+function missUpdate(now){
+  const m=S.miss, el=now-m.t0;
+  // timeline: 0-600 broken egg; then chick runs 4 steps x 260ms (half) or blinks; end ~1900ms
+  const st=Math.floor((el-600)/260);
+  if(el>600&&st!==m.step&&st<4){m.step=st;if(m.half)snd.chick();}
+  if(el>1900){
+    S.pen+=m.half?1:2;
+    if(S.pen>=6){S.pen=6;S.mode='over';S.overT=now;setHi(S.game,S.score);snd.over();}
+    else{S.mode='play';S.nextTick=now+500;}
+    S.miss=null;
+  }
+}
+
+function hareUpdate(now){
+  if(now>=S.hareNext){
+    S.hare=!S.hare;
+    S.hareNext=now+(S.hare?2500+Math.random()*5000:3000+Math.random()*9000);
+  }
+}
+
+/* ---------------- render ---------------- */
+function setDigits(on,str,blank){ // str of length 4, ' ' = off
+  for(let d=0;d<4;d++){
+    const ch=str[d];
+    if(ch===' '||blank)continue;
+    for(const k of DIGMAP[ch])on[`d${d}${k}`]=true;
+  }
+}
+function pad4(n){return String(n).padStart(4,' ');}
+function render(now){
+  const on={};
+  const blink=Math.floor(now/250)%2===0, slowBlink=Math.floor(now/500)%2===0;
+  // eggs
+  for(const e of S.eggs)on[`egg_${e.c}_${e.p}`]=true;
+  // wolf
+  on[S.wolf<2?'wolf0':'wolf1']=true; on['arm'+S.wolf]=true;
+  if(S.hare)on.hare=true;
+  // display
+  if(S.holdHi){
+    setDigits(on,pad4(getHi(S.holdHi)));on.hi=true;on['game'+S.holdHi]=true;
+  }else if(S.mode==='demo'){
+    const d=new Date();let h=d.getHours();const pm=h>=12;h=h%12||12;
+    const str=String(h).padStart(2,' ')+String(d.getMinutes()).padStart(2,'0');
+    setDigits(on,str);if(slowBlink)on.colon=true;if(pm)on.pm=true;
+  }else if(S.mode==='over'){
+    const phase=Math.floor((now-S.overT)/1500)%2;
+    if(phase===0)setDigits(on,pad4(S.score)); else {setDigits(on,pad4(getHi(S.game)));on.hi=true;}
+    on['game'+S.game]=true;
+  }else{
+    setDigits(on,pad4(S.score)); on['game'+S.game]=true;
+  }
+  // penalties
+  if(S.mode!=='demo'){
+    let full=Math.floor(S.pen/2), half=S.pen%2;
+    for(let k=0;k<full;k++)on['pen'+k]=true;
+    if(half&&slowBlink)on['pen'+full]=true;
+  }
+  // miss animation
+  if(S.mode==='miss'){
+    const m=S.miss, el=now-m.t0;
+    if(el<600||(!m.half)||m.step<4) on['broken'+m.side]=m.half?true:(el<600||blink);
+    if(el>=600&&m.half&&m.step>=0&&m.step<4) on[`chick${m.side}_${m.step}`]=true;
+    if(el>=600&&!m.half&&blink) on[`chick${m.side}_0`]=true;
+  }
+  if(S.mode==='over'&&slowBlink){ /* keep wolf, nothing else */ }
+  applySegs(on);
+}
+
+function loop(){
+  const now=performance.now();
+  hareUpdate(now);
+  if(S.mode==='play'||S.mode==='demo'){
+    if(now>=S.nextTick){tick(now);S.nextTick=now+interval();}
+  }else if(S.mode==='miss'){missUpdate(now);}
+  render(now);
+  requestAnimationFrame(loop);
+}
+
+/* ---------------- input ---------------- */
+const POS={UL:0,LL:1,UR:2,LR:3};
+function press(b){
+  ensureAudio();
+  const el=document.getElementById('b_'+b); if(el)el.classList.add('pressed');
+  if(b in POS)moveWolf(POS[b]);
+  else if(b==='A'||b==='B'){S.holdHi=b;snd.key();}
+  else if(b==='T'){toClock();snd.key();}
+  else if(b==='M'){toggleMute();}
+}
+function release(b){
+  const el=document.getElementById('b_'+b); if(el)el.classList.remove('pressed');
+  if((b==='A'||b==='B')&&S.holdHi===b){S.holdHi=null;startGame(b);}
+}
+dev.querySelectorAll('.btn').forEach(el=>{
+  const b=el.dataset.b; let down=false;
+  el.addEventListener('pointerdown',e=>{e.preventDefault();if(down)return;down=true;try{el.setPointerCapture(e.pointerId);}catch(_){}press(b);});
+  const up=e=>{if(!down)return;down=false;release(b);};
+  el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+});
+dev.addEventListener('contextmenu',e=>e.preventDefault());
+muteBtn.addEventListener('click',()=>toggleMute());
+
+const KEYMAP={KeyQ:'UL',Numpad7:'UL',KeyA:'LL',Numpad1:'LL',KeyP:'UR',Numpad9:'UR',KeyL:'LR',Numpad3:'LR',
+  Digit1:'A',Digit2:'B',Digit3:'T',KeyT:'T',KeyM:'M'};
+const keyDown={};
+window.addEventListener('keydown',e=>{
+  let b=KEYMAP[e.code];
+  if(!b&&e.code.startsWith('Arrow')){
+    const side=S.wolf<2?0:1, lv=S.wolf%2;
+    let ns=side,nl=lv;
+    if(e.code==='ArrowLeft')ns=0;if(e.code==='ArrowRight')ns=1;if(e.code==='ArrowUp')nl=0;if(e.code==='ArrowDown')nl=1;
+    b=['UL','LL','UR','LR'][ns*2+nl];
+  }
+  if(!b)return;
+  e.preventDefault();
+  if(e.repeat||keyDown[e.code])return;
+  keyDown[e.code]=b;press(b);
+});
+window.addEventListener('keyup',e=>{const b=keyDown[e.code];if(!b)return;delete keyDown[e.code];release(b);});
+window.addEventListener('blur',()=>{for(const k in keyDown){release(keyDown[k]);delete keyDown[k];}});
+
+// testing hook
+window.__im02=S;
+S.hareNext=performance.now()+2000;S.nextTick=performance.now()+300;
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
